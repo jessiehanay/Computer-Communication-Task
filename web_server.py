@@ -1,5 +1,6 @@
 import mimetypes
 import socket
+import threading
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -23,9 +24,7 @@ STATUS_REASONS = {
 
 ALLOWED_DIRECTORIES = {
     "public",
-    "css",
     "images",
-    "docs",
 }
 
 
@@ -38,6 +37,7 @@ def read_http_headers(client_socket):
     """
     data = bytearray()
 
+    # Read until the HTTPS header termintaor; headers may arrive in multiple chunks
     while b"\r\n\r\n" not in data:
         chunk = client_socket.recv(RECV_SIZE)
 
@@ -102,6 +102,7 @@ def build_response(
         "",
     ]
 
+    #Build a standard HTTP/1.0 response with the required doucble CRLF seperator
     header_bytes = "\r\n".join(headers).encode("ascii")
 
     return header_bytes + body
@@ -130,9 +131,9 @@ def resolve_requested_file(target):
     except UnicodeDecodeError as exc:
         raise ValueError("Invalid URL encoding") from exc
 
-    # Reject null bytes and Windows-style path separators.
-    # if "\x00" in decoded_path or "\\" in decoded_path:
-    #     raise PermissionError("Invalid path")
+    # Reject null bytes and Windows-style path separators
+    if "\x00" in decoded_path or "\\" in decoded_path:
+         raise PermissionError("Invalid path")
 
     # Default page
     if decoded_path == "/":
@@ -241,12 +242,15 @@ def handle_client(client_socket, client_address):
     except OSError as exc:
         print(f"Socket or file error: {exc}")
 
+    finally:
+        #Ensure the socket is always closed to prevent leaks
+        client_socket.close()
 
 def run_server():
     # STATIC_ROOT.mkdir(exist_ok=True)
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+    
     server_socket.setsockopt(
         socket.SOL_SOCKET,
         socket.SO_REUSEADDR,
@@ -264,11 +268,15 @@ def run_server():
             print("Waiting for connection (accept)...")
             client_socket, client_address = server_socket.accept()
 
+            #We spawn a new thread for every client to prevent head-of-line blocking
+            thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, client_address)
+            )
+            thread.daemon = True #Threads will terminate when the main program exits
+            thread.start()
+            
             print(f"Accepted connection from {client_address}, {client_socket}")
-            try:
-                handle_client(client_socket, client_address)
-            finally:
-                client_socket.close()
 
     finally:
         print("Closing server socket...")
