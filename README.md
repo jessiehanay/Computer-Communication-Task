@@ -6,7 +6,7 @@
 
 **Demo video:** https://www.loom.com/share/f4a71055c38541769ebb7426928c7426
 
-## About the Assignment
+**About the Assignment**
 
 This project is a multi-threaded HTTP/1.0 web server written from scratch in
 Python, using only the low-level socket API — no web frameworks. The server
